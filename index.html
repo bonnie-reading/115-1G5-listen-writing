@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>國語聽寫複習小幫手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fdfbf7;
+            background-image: radial-gradient(#e5e7eb 2px, transparent 2px);
+            background-size: 30px 30px;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        /* 語詞與注音 (Ruby) 樣式 */
+        .word-display-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .char-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        ruby {
+            font-size: 72px;
+            font-weight: 900;
+            color: #334155;
+            ruby-align: center;
+        }
+
+        rt {
+            font-size: 24px;
+            color: #64748b;
+            font-weight: bold;
+            margin-bottom: 4px;
+            letter-spacing: 1px;
+        }
+
+        /* 目標字的狀態設計 */
+        .target-char {
+            display: inline-block;
+            min-width: 80px;
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        /* 遮蔽板設計 (預設隱藏) */
+        .target-char::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 50%;
+            height: 100%;
+            background: repeating-linear-gradient(45deg, #f1f5f9, #f1f5f9 8px, #e2e8f0 8px, #e2e8f0 16px);
+            border-left: 4px solid #cbd5e1;
+            border-radius: 4px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        /* 隱藏狀態：透明字體 + 虛線底線 */
+        .state-hidden .target-char {
+            color: transparent;
+            border-bottom: 6px dashed #cbd5e1;
+        }
+
+        /* 看提示狀態：部首浮現 + 遮蔽板覆蓋右半邊 */
+        .state-hint .target-char {
+            color: #64748b; 
+            border-bottom: 6px dashed #fca5a5;
+        }
+        .state-hint .target-char::after {
+            opacity: 1; 
+        }
+        
+        /* 顯示答案狀態：紅色字體 */
+        .state-revealed .target-char {
+            color: #ef4444;
+            border-bottom: 6px solid transparent;
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* 部首徽章 */
+        .radical-badge {
+            position: absolute;
+            top: -10px;
+            right: -25px;
+            background-color: #fb7185;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 4px 10px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            z-index: 10;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+        .state-hint .radical-badge {
+            opacity: 1;
+            transform: scale(1) rotate(5deg);
+        }
+
+        /* 二選一錯誤時的震動動畫 */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px); }
+            40%, 80% { transform: translateX(6px); }
+        }
+        .shake-anim { animation: shake 0.4s ease-in-out; }
+        
+        .choice-wrong { 
+            filter: grayscale(1); 
+            opacity: 0.5; 
+            pointer-events: none; 
+            background-color: #f1f5f9 !important;
+            border-color: #cbd5e1 !important;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 檢核表 Checkbox 自訂 */
+        .custom-checkbox {
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            accent-color: #ef4444;
+        }
+
+        button:active { transform: scale(0.95); }
+
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 8px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-6 px-4">
+
+    <!-- 頂部區 -->
+    <div class="w-full max-w-4xl bg-white rounded-3xl shadow-lg p-6 mb-6 border-4 border-amber-100 relative z-10">
+        <h1 class="text-3xl md:text-4xl font-black text-center text-amber-500 mb-6 tracking-wider">🌟 國語聽寫複習小幫手 🌟</h1>
+        
+        <div class="flex justify-center items-center gap-4 px-2">
+            <label for="lesson-select" class="text-2xl font-bold text-gray-500 hidden md:block">選擇範圍：</label>
+            <select id="lesson-select" class="text-xl md:text-2xl font-bold text-amber-600 bg-amber-50 border-4 border-amber-200 rounded-xl py-3 px-6 cursor-pointer hover:bg-amber-100 focus:outline-none focus:border-amber-400 transition-colors shadow-sm text-center appearance-none w-full md:w-auto">
+                <option value="1">第一課《你我之間》</option>
+                <option value="2">第二課《風起，大家都在》</option>
+                <option value="3">第三課《廉頗與藺相如》</option>
+                <option value="4">第四課《來場快樂的桌遊》</option>
+                <option value="5">第五課《超級英雄》</option>
+                <option value="6">第六課《世足賽的贏家》</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 視圖 1：測驗區 -->
+    <div id="view-quiz" class="w-full max-w-4xl flex flex-col items-center">
+        <div class="w-full bg-white rounded-3xl shadow-xl p-8 md:p-12 min-h-[350px] flex flex-col items-center justify-center border-b-8 border-r-8 border-gray-200 relative">
+            
+            <!-- 新增：題號與進度顯示區 -->
+            <div class="absolute top-6 left-6 md:left-8">
+                <span id="quiz-progress" class="text-xl font-bold text-gray-500 bg-gray-100 border-2 border-gray-200 px-4 py-2 rounded-2xl shadow-sm"></span>
+            </div>
+
+            <div id="word-display" class="word-display-container">
+                <!-- 語詞會動態插入在這裡 -->
+            </div>
+
+            <!-- 二選一提示區塊 (預設隱藏) -->
+            <div id="choices-container" class="hidden w-full mt-10 flex justify-center gap-6">
+                <!-- 選項按鈕會自動產生在這裡 -->
+            </div>
+
+        </div>
+
+        <!-- 底部控制按鈕區 -->
+        <div class="w-full flex flex-wrap justify-center gap-3 mt-8">
+            <button onclick="playWordAudio()" class="flex-1 min-w-[140px] bg-sky-400 hover:bg-sky-500 text-white text-xl font-bold py-4 px-4 rounded-2xl shadow-[0_6px_0_#0284c7] transition-all hover:-translate-y-1">
+                🔊 語音報讀
+            </button>
+            <button onclick="showHint()" class="flex-1 min-w-[140px] bg-rose-400 hover:bg-rose-500 text-white text-xl font-bold py-4 px-4 rounded-2xl shadow-[0_6px_0_#be123c] transition-all hover:-translate-y-1">
+                💡 看半字
+            </button>
+            <button onclick="showChoices()" class="flex-1 min-w-[140px] bg-purple-400 hover:bg-purple-500 text-white text-xl font-bold py-4 px-4 rounded-2xl shadow-[0_6px_0_#7e22ce] transition-all hover:-translate-y-1">
+                🎯 二選一
+            </button>
+            <button onclick="showAnswer()" class="flex-1 min-w-[140px] bg-emerald-400 hover:bg-emerald-500 text-white text-xl font-bold py-4 px-4 rounded-2xl shadow-[0_6px_0_#047857] transition-all hover:-translate-y-1">
+                👀 看解答
+            </button>
+            <button onclick="nextWord()" class="flex-1 min-w-[140px] bg-amber-400 hover:bg-amber-500 text-white text-xl font-bold py-4 px-4 rounded-2xl shadow-[0_6px_0_#b45309] transition-all hover:-translate-y-1">
+                ➡️ 下一題
+            </button>
+        </div>
+    </div>
+
+    <!-- 視圖 2：檢核表 -->
+    <div id="view-summary" class="hidden w-full max-w-4xl flex flex-col items-center">
+        <!-- 內容保持不變，見下方 JS -->
+        <div class="w-full bg-white rounded-3xl shadow-xl p-8 border-b-8 border-r-8 border-gray-200">
+            <h2 class="text-3xl md:text-4xl font-black text-center text-emerald-600 mb-4">🎉 挑戰完成！</h2>
+            <p class="text-xl text-gray-600 mb-6 text-center font-bold bg-emerald-50 py-3 rounded-xl">
+                請對照寫好的字，如果有「寫錯」或「不熟」的，請在旁邊打勾喔！
+            </p>
+            <div id="checklist-container" class="space-y-3 max-h-[50vh] overflow-y-auto px-2"></div>
+            <div class="mt-8 flex justify-center gap-4 flex-wrap">
+                <button onclick="startLesson(currentLesson)" class="bg-gray-400 hover:bg-gray-500 text-white text-xl font-bold py-4 px-8 rounded-2xl shadow-[0_6px_0_#4b5563] transition-all hover:-translate-y-1">🔄 再測一次</button>
+                <button onclick="startReviewMode()" class="bg-indigo-500 hover:bg-indigo-600 text-white text-2xl font-bold py-4 px-10 rounded-2xl shadow-[0_6px_0_#4338ca] transition-all hover:-translate-y-1">✨ 送出並進入複習</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 視圖 3：AI 口訣與複習區 -->
+    <div id="view-review" class="hidden w-full max-w-4xl flex flex-col items-center">
+        <!-- 內容保持不變，見下方 JS -->
+        <div class="w-full bg-white rounded-3xl shadow-xl p-8 md:p-12 min-h-[400px] flex flex-col items-center border-b-8 border-r-8 border-gray-200 relative">
+            <div class="w-full flex justify-between items-center mb-6 border-b-2 border-indigo-100 pb-4">
+                <h2 class="text-3xl font-black text-indigo-600">🧠 魔法記憶口訣卡</h2>
+                <span id="review-progress" class="text-2xl font-bold text-gray-400 bg-gray-100 px-4 py-1 rounded-full">1 / 3</span>
+            </div>
+            <div class="text-center mb-8 flex flex-col items-center gap-4">
+                <span class="text-gray-500 text-2xl font-bold">我們來複習語詞：「<span id="review-word-text" class="text-indigo-500"></span>」</span>
+                <ruby id="review-target-ruby" class="text-8xl font-black text-rose-500 tracking-widest bg-rose-50 px-8 py-4 rounded-3xl border-4 border-rose-100">
+                    <span id="review-target-char">字</span>
+                    <rt id="review-target-pinyin">ㄗˋ</rt>
+                </ruby>
+            </div>
+            <div class="w-full bg-indigo-50 rounded-3xl p-8 border-4 border-indigo-100 relative mt-4">
+                <div class="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-indigo-400 text-white text-xl font-bold px-6 py-2 rounded-full shadow-md">💡 記憶小秘訣</div>
+                <p id="mnemonic-text" class="text-2xl md:text-3xl text-slate-700 leading-relaxed font-bold text-center mt-4"></p>
+            </div>
+            <div class="w-full flex gap-4 mt-10 justify-center flex-wrap">
+                <button onclick="playMnemonicAudio()" class="bg-sky-400 hover:bg-sky-500 text-white text-2xl font-bold py-4 px-10 rounded-2xl shadow-[0_6px_0_#0284c7] transition-all hover:-translate-y-1">🔊 聽口訣</button>
+                <button onclick="nextReviewWord()" class="bg-amber-400 hover:bg-amber-500 text-white text-2xl font-bold py-4 px-10 rounded-2xl shadow-[0_6px_0_#b45309] transition-all hover:-translate-y-1">➡️ 下一個字</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 訊息提示框 -->
+    <div id="message-box" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl transform transition-all scale-95" id="message-content">
+            <div class="text-6xl mb-4" id="message-icon">🎉</div>
+            <h3 class="text-2xl font-black text-gray-800 mb-4" id="message-title">標題</h3>
+            <p class="text-lg text-gray-600 mb-8 font-bold" id="message-text">內文</p>
+            <button onclick="closeMessage()" class="w-full bg-amber-400 hover:bg-amber-500 text-white text-xl font-bold py-3 rounded-xl shadow-[0_4px_0_#b45309]">我知道了！</button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 包含形近字(distractor) 的資料庫
+        // ==========================================
+        const fullDatabase = [
+            // 第一課
+            { lesson: 1, text: "彼此", target: "彼", distractor: "波", radical: "彳", chars: [{c:"彼", p:"ㄅㄧˇ"},{c:"此", p:"ㄘˇ"}], mnemonic: "雙人旁加上皮，你和我『彼此』都是人，要互相照顧喔！" },
+            { lesson: 1, text: "關係", target: "係", distractor: "系", radical: "人", chars: [{c:"關", p:"ㄍㄨㄢ"},{c:"係", p:"ㄒㄧˋ"}], mnemonic: "單人旁加上一條絲線，把大家牽在一起，這就是我們的『關係』。" },
+            { lesson: 1, text: "融洽", target: "融", distractor: "隔", radical: "虫", chars: [{c:"融", p:"ㄖㄨㄥˊ"},{c:"洽", p:"ㄑㄧㄚˋ"}], mnemonic: "左邊是鬲，右邊是虫，像鍋裡的蟲蛹化成蝶，相處『融』洽。" },
+            { lesson: 1, text: "融洽", target: "洽", distractor: "恰", radical: "水", chars: [{c:"融", p:"ㄖㄨㄥˊ"},{c:"洽", p:"ㄑㄧㄚˋ"}], mnemonic: "水字旁加上合，大家像水一樣和合在一起，非常融『洽』。" },
+            { lesson: 1, text: "周遭", target: "遭", distractor: "糟", radical: "辵", chars: [{c:"周", p:"ㄓㄡ"},{c:"遭", p:"ㄗㄠ"}], mnemonic: "有車子(曹)在路上走(辵部)，看看『周遭』風景好美麗。" },
+            { lesson: 1, text: "擁抱", target: "擁", distractor: "湧", radical: "手", chars: [{c:"擁", p:"ㄩㄥ"},{c:"抱", p:"ㄅㄠˋ"}], mnemonic: "用手去圍住一座城(邕)，就是伸出雙手大大的『擁』抱。" },
+            { lesson: 1, text: "堅定", target: "堅", distractor: "豎", radical: "土", chars: [{c:"堅", p:"ㄐㄧㄢ"},{c:"定", p:"ㄉㄧㄥˋ"}], mnemonic: "底下的土要硬梆梆的，上面的臣子和右手(又)才能站得『堅』定。" },
+            { lesson: 1, text: "耐勞", target: "耐", distractor: "討", radical: "而", chars: [{c:"耐", p:"ㄋㄞˋ"},{c:"勞", p:"ㄌㄠˊ"}], mnemonic: "左邊是而，右邊是寸，用一點一寸的時間慢慢熬，非常有『耐』心。" },
+            { lesson: 1, text: "耐勞", target: "勞", distractor: "螢", radical: "力", chars: [{c:"耐", p:"ㄋㄞˋ"},{c:"勞", p:"ㄌㄠˊ"}], mnemonic: "上面有兩個火，底下還要出『力』氣，真是辛『勞』呀！" },
+            { lesson: 1, text: "真諦", target: "諦", distractor: "啼", radical: "言", chars: [{c:"真", p:"ㄓㄣ"},{c:"諦", p:"ㄉㄧˋ"}], mnemonic: "言字旁加上帝王的帝，說出來的話像帝王一樣重要，這就是真『諦』。" },
+            { lesson: 1, text: "刷牙", target: "刷", distractor: "涮", radical: "刀", chars: [{c:"刷", p:"ㄕㄨㄚ"},{c:"牙", p:"ㄧㄚˊ"}], mnemonic: "拿著像小刀一樣的工具在布(尸+巾)上清理，就是『刷』牙的刷。" },
+            { lesson: 1, text: "牙膏", target: "膏", distractor: "篙", radical: "肉", chars: [{c:"牙", p:"ㄧㄚˊ"},{c:"膏", p:"ㄍㄠ"}], mnemonic: "高高的肉(月部)變成了軟軟的油脂，就像擠出來的牙『膏』。" },
+            { lesson: 1, text: "協助", target: "協", distractor: "脅", radical: "十", chars: [{c:"協", p:"ㄒㄧㄝˊ"},{c:"助", p:"ㄓㄨˋ"}], mnemonic: "一個十字架旁邊有三個力，代表大家出力『協』助，力量大！" },
+            { lesson: 1, text: "提供", target: "供", distractor: "洪", radical: "人", chars: [{c:"提", p:"ㄊㄧˊ"},{c:"供", p:"ㄍㄨㄥ"}], mnemonic: "人字旁加上共同的共，大家一起把東西拿出來『供』應給大家。" },
+            
+            // 第二課
+            { lesson: 2, text: "直笛", target: "笛", distractor: "苗", radical: "竹", chars: [{c:"直", p:"ㄓˊ"},{c:"笛", p:"ㄉㄧˊ"}], mnemonic: "上面是竹字頭，下面是理由的由。用竹子做的樂器，吹出好聽的『笛』音。" },
+            { lesson: 2, text: "吹奏", target: "奏", distractor: "湊", radical: "大", chars: [{c:"吹", p:"ㄔㄨㄟ"},{c:"奏", p:"ㄗㄡˋ"}], mnemonic: "上面像春天的春被壓扁，下面一個天。大家在春天一起吹『奏』樂器！" },
+            { lesson: 2, text: "簡單", target: "簡", distractor: "間", radical: "竹", chars: [{c:"簡", p:"ㄐㄧㄢˇ"},{c:"單", p:"ㄉㄢ"}], mnemonic: "竹字頭加上中間的間，古代把字寫在竹片上，讓事情變『簡』單記錄。" },
+            { lesson: 2, text: "旋律", target: "旋", distractor: "旅", radical: "方", chars: [{c:"旋", p:"ㄒㄩㄢˊ"},{c:"律", p:"ㄌㄩˋ"}], mnemonic: "方字旁加上一個人在疋(轉圈)，音樂的節奏一直盤『旋』。" },
+            { lesson: 2, text: "旋律", target: "律", distractor: "建", radical: "彳", chars: [{c:"旋", p:"ㄒㄩㄢˊ"},{c:"律", p:"ㄌㄩˋ"}], mnemonic: "雙人旁加上一枝筆(聿)，大家都要照著寫下的規『律』來做。" },
+            { lesson: 2, text: "縈繞", target: "縈", distractor: "螢", radical: "糸", chars: [{c:"縈", p:"ㄧㄥˊ"},{c:"繞", p:"ㄖㄠˋ"}], mnemonic: "上面有兩個火，下面是糸(絲線)，絲線彎彎曲曲的『縈』繞。" },
+            { lesson: 2, text: "縈繞", target: "繞", distractor: "燒", radical: "糸", chars: [{c:"縈", p:"ㄧㄥˊ"},{c:"繞", p:"ㄖㄠˋ"}], mnemonic: "糸字旁加上堯(很高的地方)，絲線一圈一圈往上圍『繞』。" },
+            { lesson: 2, text: "樹梢", target: "梢", distractor: "稍", radical: "木", chars: [{c:"樹", p:"ㄕㄨˋ"},{c:"梢", p:"ㄕㄠ"}], mnemonic: "木字旁加上肖像的肖，樹木長得小小的末端，就是樹『梢』。" },
+            { lesson: 2, text: "走廊", target: "廊", distractor: "朗", radical: "广", chars: [{c:"走", p:"ㄗㄡˇ"},{c:"廊", p:"ㄌㄤˊ"}], mnemonic: "廣字頭下面有個郎君，郎君在有屋頂的走『廊』上散步。" },
+            { lesson: 2, text: "熟悉", target: "熟", distractor: "熱", radical: "火", chars: [{c:"熟", p:"ㄕㄡˊ"},{c:"悉", p:"ㄒㄧ"}], mnemonic: "丸子加上子和火，用火把食物煮得『熟』透了！" },
+            { lesson: 2, text: "熟悉", target: "悉", distractor: "采", radical: "心", chars: [{c:"熟", p:"ㄕㄡˊ"},{c:"悉", p:"ㄒㄧ"}], mnemonic: "上面是採集(采)，下面是心。用心把事情全部收集了解，就是熟『悉』。" },
+            { lesson: 2, text: "和諧", target: "諧", distractor: "皆", radical: "言", chars: [{c:"和", p:"ㄏㄜˊ"},{c:"諧", p:"ㄒㄧㄝˊ"}], mnemonic: "言字旁加上皆，大家說的話都一樣順耳，氣氛很和『諧』。" },
+            { lesson: 2, text: "階梯", target: "階", distractor: "皆", radical: "阜", chars: [{c:"階", p:"ㄐㄧㄝ"},{c:"梯", p:"ㄊㄧ"}], mnemonic: "左耳旁(阜)表示山坡，右邊是皆，大家一起一步一步走上『階』梯。" },
+            { lesson: 2, text: "必須", target: "須", distractor: "順", radical: "頁", chars: [{c:"必", p:"ㄅㄧˋ"},{c:"須", p:"ㄒㄩ"}], mnemonic: "三撇加上頁部，原本是長在臉上的鬍鬚，現在借來當作必『須』的意思。" },
+            { lesson: 2, text: "花絮", target: "絮", distractor: "恕", radical: "糸", chars: [{c:"花", p:"ㄏㄨㄚ"},{c:"絮", p:"ㄒㄩˋ"}], mnemonic: "像女孩子(如)在整理絲線(糸)，輕輕柔柔的像棉『絮』一樣。" },
+            { lesson: 2, text: "隊伍", target: "伍", distractor: "五", radical: "人", chars: [{c:"隊", p:"ㄉㄨㄟˋ"},{c:"伍", p:"ㄨˇ"}], mnemonic: "人字旁加上五，五個人排成一排，變成整齊的隊『伍』。" },
+            { lesson: 2, text: "威力", target: "威", distractor: "咸", radical: "女", chars: [{c:"威", p:"ㄨㄟ"},{c:"力", p:"ㄌㄧˋ"}], mnemonic: "像拿著武器(戌)保護女孩子，展現強大的『威』力！" },
+
+            // 第三課
+            { lesson: 3, text: "和氏璧", target: "璧", distractor: "壁", radical: "玉", chars: [{c:"和", p:"ㄏㄜˊ"},{c:"氏", p:"ㄕˋ"},{c:"璧", p:"ㄅㄧˋ"}], mnemonic: "下面是玉部喔！一塊牆壁般平坦的美玉，就是和氏『璧』。" },
+            { lesson: 3, text: "歸還", target: "歸", distractor: "婦", radical: "止", chars: [{c:"歸", p:"ㄍㄨㄟ"},{c:"還", p:"ㄏㄨㄢˊ"}], mnemonic: "左邊有追(𠂤)的樣子，右邊拿著掃帚(帚)回家，『歸』還物品。" },
+            { lesson: 3, text: "諸侯", target: "諸", distractor: "煮", radical: "言", chars: [{c:"諸", p:"ㄓㄨ"},{c:"侯", p:"ㄏㄡˊ"}], mnemonic: "言字旁加一個者，說話的人對著大眾講話，也就是『諸』位。" },
+            { lesson: 3, text: "諸侯", target: "侯", distractor: "候", radical: "人", chars: [{c:"諸", p:"ㄓㄨ"},{c:"侯", p:"ㄏㄡˊ"}], mnemonic: "單人旁，中間沒有一豎喔！古代保護國君的諸『侯』。" },
+            { lesson: 3, text: "挺身而出", target: "挺", distractor: "廷", radical: "手", chars: [{c:"挺", p:"ㄊㄧㄥˇ"},{c:"身", p:"ㄕㄣ"},{c:"而", p:"ㄦˊ"},{c:"出", p:"ㄔㄨ"}], mnemonic: "用手把朝廷(廷)撐起來，遇到困難時『挺』身而出。" },
+            { lesson: 3, text: "升官", target: "官", distractor: "宮", radical: "宀", chars: [{c:"升", p:"ㄕㄥ"},{c:"官", p:"ㄍㄨㄢ"}], mnemonic: "寶蓋頭(宀)下面有兩個口，住在有屋頂的大房子裡發號施令的『官』員。" },
+            { lesson: 3, text: "軍人", target: "軍", distractor: "暈", radical: "車", chars: [{c:"軍", p:"ㄐㄩㄣ"},{c:"人", p:"ㄖㄣˊ"}], mnemonic: "車子上面加個帽子(冖)，把戰車包圍起來，代表『軍』隊來了。" },
+            { lesson: 3, text: "羞辱", target: "羞", distractor: "差", radical: "羊", chars: [{c:"羞", p:"ㄒㄧㄡ"},{c:"辱", p:"ㄖㄨˋ"}], mnemonic: "羊字頭下面有隻手(丑)，小羊被抓住了覺得很害『羞』。" },
+            { lesson: 3, text: "羞辱", target: "辱", distractor: "唇", radical: "辰", chars: [{c:"羞", p:"ㄒㄧㄡ"},{c:"辱", p:"ㄖㄨˋ"}], mnemonic: "上面是農具(辰)，下面是寸，被拿著農具指著罵，感到很屈『辱』。" },
+            { lesson: 3, text: "懦弱", target: "懦", distractor: "糯", radical: "心", chars: [{c:"懦", p:"ㄋㄨㄛˋ"},{c:"弱", p:"ㄖㄨㄛˋ"}], mnemonic: "豎心旁加上需要的需，心裡總是需要別人幫忙，顯得有點『懦』弱。" },
+            { lesson: 3, text: "羞恥", target: "恥", distractor: "耽", radical: "心", chars: [{c:"羞", p:"ㄒㄧㄡ"},{c:"恥", p:"ㄔˇ"}], mnemonic: "左邊是耳朵(耳)，右邊是心，聽到別人的批評，心裡覺得羞『恥』。" },
+            { lesson: 3, text: "權勢", target: "權", distractor: "歡", radical: "木", chars: [{c:"權", p:"ㄑㄩㄢˊ"},{c:"勢", p:"ㄕˋ"}], mnemonic: "木字旁加上鸛鳥(雚)，像拿著木杖指揮鳥兒一樣，擁有『權』力。" },
+            { lesson: 3, text: "權勢", target: "勢", distractor: "墊", radical: "力", chars: [{c:"權", p:"ㄑㄩㄢˊ"},{c:"勢", p:"ㄕˋ"}], mnemonic: "上面是執行的執，下面加個力。用力去執行任務，展現強大的氣『勢』。" },
+            { lesson: 3, text: "進攻", target: "攻", distractor: "功", radical: "攴", chars: [{c:"進", p:"ㄐㄧㄣˋ"},{c:"攻", p:"ㄍㄨㄥ"}], mnemonic: "左邊是工作的工，右邊是攴(敲打)，拿著工具努力敲打敵人，『攻』擊！" },
+            { lesson: 3, text: "國君", target: "君", distractor: "吞", radical: "口", chars: [{c:"國", p:"ㄍㄨㄛˊ"},{c:"君", p:"ㄐㄩㄣ"}], mnemonic: "拿著權杖(尹)開口(口)發號施令的人，就是一國之『君』。" },
+            { lesson: 3, text: "坐鎮", target: "鎮", distractor: "填", radical: "金", chars: [{c:"坐", p:"ㄗㄨㄛˋ"},{c:"鎮", p:"ㄓㄣˋ"}], mnemonic: "金字旁加上真正的真，用很重的金屬把東西壓住，『鎮』守在這裡。" },
+            { lesson: 3, text: "羞愧", target: "愧", distractor: "塊", radical: "心", chars: [{c:"羞", p:"ㄒㄧㄡ"},{c:"愧", p:"ㄎㄨㄟˋ"}], mnemonic: "豎心旁加上鬼，心裡覺得有鬼、對不起別人，感到非常羞『愧』。" },
+            { lesson: 3, text: "負荊請罪", target: "荊", distractor: "刑", radical: "艸", chars: [{c:"負", p:"ㄈㄨˋ"},{c:"荊", p:"ㄐㄧㄥ"},{c:"請", p:"ㄑㄧㄥˇ"},{c:"罪", p:"ㄗㄨㄟˋ"}], mnemonic: "草字頭下面是刑罰的刑，背著帶刺的『荊』條去道歉請罪。" },
+            { lesson: 3, text: "肝膽相照", target: "肝", distractor: "汗", radical: "肉", chars: [{c:"肝", p:"ㄍㄢ"},{c:"膽", p:"ㄉㄢˇ"},{c:"相", p:"ㄒㄧㄤ"},{c:"照", p:"ㄓㄠˋ"}], mnemonic: "月(肉)字旁加上干擾的干，我們身體裡的重要器官『肝』臟。" },
+
+            // 第四課
+            { lesson: 4, text: "大廳", target: "廳", distractor: "聽", radical: "广", chars: [{c:"大", p:"ㄉㄚˋ"},{c:"廳", p:"ㄊㄧㄥ"}], mnemonic: "廣字頭下面有個聽，在寬廣的屋子裡聽大家說話的地方，就是大『廳』。" },
+            { lesson: 4, text: "年齡", target: "齡", distractor: "嶺", radical: "齒", chars: [{c:"年", p:"ㄋㄧㄢˊ"},{c:"齡", p:"ㄌㄧㄥˊ"}], mnemonic: "牙齒的齒加上命令的令，看牙齒長的情況就能知道年『齡』喔！" },
+            { lesson: 4, text: "氣氛", target: "氛", distractor: "盆", radical: "气", chars: [{c:"氣", p:"ㄑㄧˋ"},{c:"氛", p:"ㄈㄣ"}], mnemonic: "氣字頭加上分開的分，空氣中散布著歡樂的感覺，就是氣『氛』。" },
+            { lesson: 4, text: "春筍", target: "筍", distractor: "旬", radical: "竹", chars: [{c:"春", p:"ㄔㄨㄣ"},{c:"筍", p:"ㄙㄨㄣˇ"}], mnemonic: "竹字頭加上一句話的句，春天剛從土裡冒出來的竹子寶寶，叫做竹『筍』。" },
+            { lesson: 4, text: "根據", target: "據", distractor: "劇", radical: "手", chars: [{c:"根", p:"ㄍㄣ"},{c:"據", p:"ㄐㄩˋ"}], mnemonic: "手字旁加上野豬(豦)，用手緊緊抓住證據，有根有『據』。" },
+            { lesson: 4, text: "例如", target: "例", distractor: "列", radical: "人", chars: [{c:"例", p:"ㄌㄧˋ"},{c:"如", p:"ㄖㄨˊ"}], mnemonic: "單人旁加上列隊的列，把人們排好當作示範，這就是『例』子。" },
+            { lesson: 4, text: "寓教於樂", target: "寓", distractor: "禺", radical: "宀", chars: [{c:"寓", p:"ㄩˋ"},{c:"教", p:"ㄐㄧㄠˋ"},{c:"於", p:"ㄩˊ"},{c:"樂", p:"ㄌㄜˋ"}], mnemonic: "寶蓋頭加上猴子(禺)，讓猴子住在房子裡，寄『寓』著好玩的道理。" },
+            { lesson: 4, text: "單純", target: "純", distractor: "鈍", radical: "糸", chars: [{c:"單", p:"ㄉㄢ"},{c:"純", p:"ㄔㄨㄣˊ"}], mnemonic: "糸字旁加上屯，像剛抽出來沒有染色的絲線一樣，非常乾淨『純』潔。" },
+            { lesson: 4, text: "下棋", target: "棋", distractor: "期", radical: "木", chars: [{c:"下", p:"ㄒㄧㄚˋ"},{c:"棋", p:"ㄑㄧˊ"}], mnemonic: "木字旁加上其他的其，用木頭做成的小格子板子，我們來下『棋』吧！" },
+            { lesson: 4, text: "撲克牌", target: "撲", distractor: "僕", radical: "手", chars: [{c:"撲", p:"ㄆㄨ"},{c:"克", p:"ㄎㄜˋ"},{c:"牌", p:"ㄆㄞˊ"}], mnemonic: "手字旁加上僕人的僕(右邊)，手用力往前拍打，『撲』克牌好好玩。" },
+            { lesson: 4, text: "患得患失", target: "患", distractor: "忠", radical: "心", chars: [{c:"患", p:"ㄏㄨㄢˋ"},{c:"得", p:"ㄉㄜˊ"},{c:"患", p:"ㄏㄨㄢˋ"},{c:"失", p:"ㄕ"}], mnemonic: "上面是一串(串)，下面是心。心裡一直串著擔憂，『患』得患失。" },
+            { lesson: 4, text: "富足", target: "富", distractor: "答", radical: "宀", chars: [{c:"富", p:"ㄈㄨˋ"},{c:"足", p:"ㄗㄨˊ"}], mnemonic: "寶蓋頭下面有一口田，家裡有房子又有田地，非常『富』有。" },
+
+            // 第五課
+            { lesson: 5, text: "授權", target: "授", distractor: "受", radical: "手", chars: [{c:"授", p:"ㄕㄡˋ"},{c:"權", p:"ㄑㄩㄢˊ"}], mnemonic: "手字旁加上接受的受，我用手把權利交給你，這叫做『授』權。" },
+            { lesson: 5, text: "違法", target: "違", distractor: "偉", radical: "辵", chars: [{c:"違", p:"ㄨㄟˊ"},{c:"法", p:"ㄈㄚˇ"}], mnemonic: "有走路(辵部)加上韋(皮革)，走路偏離了正確的方向，『違』反了規定。" },
+            { lesson: 5, text: "侵犯", target: "侵", distractor: "浸", radical: "人", chars: [{c:"侵", p:"ㄑㄧㄣ"},{c:"犯", p:"ㄈㄢˋ"}], mnemonic: "單人旁加上旁邊一個拿掃帚的手，有人偷偷跑進來『侵』入我們的地盤。" },
+            { lesson: 5, text: "侵犯", target: "犯", distractor: "氾", radical: "犬", chars: [{c:"侵", p:"ㄑㄧㄣ"},{c:"犯", p:"ㄈㄢˋ"}], mnemonic: "犬字旁加上己，像狗狗一樣亂咬人做錯事，侵『犯』了別人。" },
+            { lesson: 5, text: "盜版", target: "盜", distractor: "監", radical: "皿", chars: [{c:"盜", p:"ㄉㄠˋ"},{c:"版", p:"ㄅㄢˇ"}], mnemonic: "上面是偷看(次)，下面是盤子(皿)，看著別人的盤子想偷吃，這就是強『盜』。" },
+            { lesson: 5, text: "剪輯", target: "剪", distractor: "煎", radical: "刀", chars: [{c:"剪", p:"ㄐㄧㄢˇ"},{c:"輯", p:"ㄐㄧˊ"}], mnemonic: "上面是前進的前，下面是一把刀。用刀子在前面喀嚓喀嚓『剪』紙。" },
+            { lesson: 5, text: "剪輯", target: "輯", distractor: "緝", radical: "車", chars: [{c:"剪", p:"ㄐㄧㄢˇ"},{c:"輯", p:"ㄐㄧˊ"}], mnemonic: "車字旁加上耳朵(咠)，把很多台車子像耳朵聽話一樣排好，叫做編『輯』。" },
+            { lesson: 5, text: "營利", target: "營", distractor: "管", radical: "火", chars: [{c:"營", p:"ㄧㄥˊ"},{c:"利", p:"ㄌㄧˋ"}], mnemonic: "上面有兩個火，下面有屋子(宮的變形)，點著火把大家聚在一起做生意『營』利。" },
+            { lesson: 5, text: "創作", target: "創", distractor: "倉", radical: "刀", chars: [{c:"創", p:"ㄔㄨㄤˋ"},{c:"作", p:"ㄗㄨㄛˋ"}], mnemonic: "左邊是倉庫(倉)，右邊是刀子，用刀子刻出新的東西，這叫『創』作。" },
+            { lesson: 5, text: "出版", target: "版", distractor: "板", radical: "片", chars: [{c:"出", p:"ㄔㄨ"},{c:"版", p:"ㄅㄢˇ"}], mnemonic: "左邊是片(木板的一半)，右邊是反。用木板刻字印書，就是出『版』。" },
+            { lesson: 5, text: "權益", target: "益", distractor: "盆", radical: "皿", chars: [{c:"權", p:"ㄑㄩㄢˊ"},{c:"益", p:"ㄧˋ"}], mnemonic: "上面像水滿出來，下面是盤子(皿)，水多到溢出來，代表有很多好處和利『益』。" },
+            { lesson: 5, text: "傳播", target: "播", distractor: "潘", radical: "手", chars: [{c:"傳", p:"ㄔㄨㄢˊ"},{c:"播", p:"ㄅㄛ"}], mnemonic: "手字旁加上一個番，用手把種子撒到田裡(番)，就是『播』種或廣播。" },
+
+            // 第六課
+            { lesson: 6, text: "紡織", target: "紡", distractor: "防", radical: "糸", chars: [{c:"紡", p:"ㄈㄤˇ"},{c:"織", p:"ㄓ"}], mnemonic: "糸(絲線)加上方向的方，把絲線順著方向轉啊轉，這叫做『紡』紗。" },
+            { lesson: 6, text: "紡織", target: "織", distractor: "識", radical: "糸", chars: [{c:"紡", p:"ㄈㄤˇ"},{c:"織", p:"ㄓ"}], mnemonic: "糸字旁加上聲音(戠)，機器發出聲音把線交錯編起來，這就是編『織』。" },
+            { lesson: 6, text: "銷毀", target: "銷", distractor: "消", radical: "金", chars: [{c:"銷", p:"ㄒㄧㄠ"},{c:"毀", p:"ㄏㄨㄟˇ"}], mnemonic: "金字旁加上肖像的肖，把金屬熔化掉變不見，就是『銷』毀。" },
+            { lesson: 6, text: "廢棄物", target: "廢", distractor: "潑", radical: "广", chars: [{c:"廢", p:"ㄈㄟˋ"},{c:"棄", p:"ㄑㄧˋ"},{c:"物", p:"ㄨˋ"}], mnemonic: "廣字頭下面有發射的發，房子裡堆滿不要丟出去的東西，就是『廢』棄物。" },
+            { lesson: 6, text: "寶特瓶", target: "瓶", distractor: "拼", radical: "瓦", chars: [{c:"寶", p:"ㄅㄠˇ"},{c:"特", p:"ㄊㄜˋ"},{c:"瓶", p:"ㄆㄧㄥˊ"}], mnemonic: "左邊是並排的並，右邊是瓦片。用瓦片做成可以並排裝水的容器，叫『瓶』子。" },
+            { lesson: 6, text: "融化", target: "融", distractor: "隔", radical: "虫", chars: [{c:"融", p:"ㄖㄨㄥˊ"},{c:"化", p:"ㄏㄨㄚˋ"}], mnemonic: "左邊是煮東西的鍋子(鬲)，右邊是虫，熱熱的鍋子把冰塊都『融』化了。" },
+            { lesson: 6, text: "抽絲", target: "抽", distractor: "油", radical: "手", chars: [{c:"抽", p:"ㄔㄡ"},{c:"絲", p:"ㄙ"}], mnemonic: "手字旁加上理由的由，手用力把線拉出來，這叫做『抽』絲。" },
+            { lesson: 6, text: "紗線", target: "紗", distractor: "沙", radical: "糸", chars: [{c:"紗", p:"ㄕㄚ"},{c:"線", p:"ㄒㄧㄢˋ"}], mnemonic: "糸字旁加上少少的少，很細很輕少的絲線織成的布，就是輕『紗』。" },
+            { lesson: 6, text: "濕潤", target: "潤", distractor: "閏", radical: "水", chars: [{c:"濕", p:"ㄕ"},{c:"潤", p:"ㄖㄨㄣˋ"}], mnemonic: "水字旁加上門裡有王(閏)，水氣跑進門裡讓一切都變得水『潤』潤的。" },
+            { lesson: 6, text: "擺脫", target: "擺", distractor: "罷", radical: "手", chars: [{c:"擺", p:"ㄅㄞˇ"},{c:"脫", p:"ㄊㄨㄛ"}], mnemonic: "手字旁加上罷工的罷，手用力揮動不要這個東西了，把它『擺』一邊。" },
+            { lesson: 6, text: "擺脫", target: "脫", distractor: "說", radical: "肉", chars: [{c:"擺", p:"ㄅㄞˇ"},{c:"脫", p:"ㄊㄨㄛ"}], mnemonic: "月(肉)字旁加上兌換的兌，就像蛇把舊皮換掉一樣，『脫』掉外套。" }
+        ];
+
+        // --- 全域變數狀態 ---
+        let currentLesson = 1;
+        let currentQuizQueue = [];
+        let completedQuizList = [];
+        let currentWordIndex = 0;
+        let unfamiliarWords = [];
+        let currentReviewIndex = 0;
+        const synth = window.speechSynthesis;
+
+        // --- DOM 綁定 ---
+        const lessonSelect = document.getElementById('lesson-select');
+        const wordDisplay = document.getElementById('word-display');
+        const choicesContainer = document.getElementById('choices-container');
+        const viewQuiz = document.getElementById('view-quiz');
+        const viewSummary = document.getElementById('view-summary');
+        const viewReview = document.getElementById('view-review');
+        const checklistContainer = document.getElementById('checklist-container');
+
+        function init() {
+            lessonSelect.addEventListener('change', (e) => {
+                startLesson(parseInt(e.target.value));
+            });
+            startLesson(1);
+        }
+
+        function switchView(viewName) {
+            viewQuiz.classList.add('hidden');
+            viewSummary.classList.add('hidden');
+            viewReview.classList.add('hidden');
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
+        }
+
+        function showMessage(icon, title, text) {
+            document.getElementById('message-icon').innerText = icon;
+            document.getElementById('message-title').innerText = title;
+            document.getElementById('message-text').innerText = text;
+            const box = document.getElementById('message-box');
+            const content = document.getElementById('message-content');
+            box.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeMessage() {
+            const box = document.getElementById('message-box');
+            const content = document.getElementById('message-content');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            setTimeout(() => box.classList.add('hidden'), 200);
+        }
+
+        // ==========================================
+        // 測驗區
+        // ==========================================
+        function startLesson(lessonNum) {
+            currentLesson = lessonNum;
+            lessonSelect.value = lessonNum;
+            let pool = fullDatabase.filter(w => w.lesson === currentLesson);
+            currentQuizQueue = [...pool].sort(() => Math.random() - 0.5);
+            completedQuizList = [];
+            currentWordIndex = 0;
+            switchView('quiz');
+            renderQuizWord();
+        }
+
+        function renderQuizWord() {
+            choicesContainer.classList.add('hidden'); // 隱藏選項區
+            choicesContainer.innerHTML = '';
+            
+            // 更新進度題號顯示
+            document.getElementById('quiz-progress').innerText = `第 ${currentWordIndex + 1} 題 / 共 ${currentQuizQueue.length} 題`;
+            
+            const currentItem = currentQuizQueue[currentWordIndex];
+            let html = '';
+            currentItem.chars.forEach(item => {
+                if (item.c === currentItem.target) {
+                    html += `
+                        <div class="char-wrapper state-hidden" id="target-wrapper">
+                            <ruby>
+                                <span class="target-char">${item.c}</span>
+                                <rt>${item.p}</rt>
+                            </ruby>
+                            <div class="radical-badge">${currentItem.radical}部</div>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="char-wrapper">
+                            <ruby>
+                                <span>${item.c}</span>
+                                <rt>${item.p}</rt>
+                            </ruby>
+                        </div>
+                    `;
+                }
+            });
+            wordDisplay.innerHTML = html;
+        }
+
+        function showHint() {
+            const targetWrapper = document.getElementById('target-wrapper');
+            if(targetWrapper && !targetWrapper.classList.contains('state-revealed')) {
+                targetWrapper.classList.remove('state-hidden');
+                targetWrapper.classList.add('state-hint');
+            }
+        }
+
+        function showAnswer() {
+            const targetWrapper = document.getElementById('target-wrapper');
+            if(targetWrapper) {
+                targetWrapper.classList.remove('state-hidden');
+                targetWrapper.classList.remove('state-hint');
+                targetWrapper.classList.add('state-revealed');
+            }
+        }
+
+        function nextWord() {
+            showAnswer();
+            completedQuizList.push(currentQuizQueue[currentWordIndex]);
+            choicesContainer.classList.add('hidden'); // 準備換題時隱藏選項
+            
+            setTimeout(() => {
+                currentWordIndex++;
+                if (currentWordIndex >= currentQuizQueue.length) {
+                    generateSummary();
+                } else {
+                    renderQuizWord();
+                }
+            }, 600);
+        }
+
+        function playWordAudio() {
+            const currentItem = currentQuizQueue[currentWordIndex];
+            if(currentItem) speakText(currentItem.text);
+        }
+
+        // ==========================================
+        // 二選一提示區功能
+        // ==========================================
+        function showChoices() {
+            // 若已顯示答案，或已經顯示出選項，則不動作
+            const targetWrapper = document.getElementById('target-wrapper');
+            if (targetWrapper && targetWrapper.classList.contains('state-revealed')) return;
+            if (!choicesContainer.classList.contains('hidden')) return; 
+
+            const currentItem = currentQuizQueue[currentWordIndex];
+            
+            // 隨機打亂正確字與干擾字
+            let options = [currentItem.target, currentItem.distractor];
+            options.sort(() => Math.random() - 0.5);
+
+            choicesContainer.innerHTML = options.map(opt => `
+                <div class="choice-card flex-1 max-w-[120px] aspect-square flex justify-center items-center cursor-pointer bg-white border-4 border-gray-200 rounded-3xl text-6xl font-bold text-gray-700 shadow-sm transition-all hover:border-purple-300 hover:bg-purple-50 hover:-translate-y-1"
+                     onclick="handleChoice(this, '${opt}', '${currentItem.target}')">
+                    ${opt}
+                </div>
+            `).join('');
+            
+            choicesContainer.classList.remove('hidden');
+        }
+
+        function handleChoice(element, selectedChar, correctChar) {
+            // 防止重複點擊
+            if (element.classList.contains('choice-wrong') || element.classList.contains('border-emerald-500')) return;
+
+            if (selectedChar === correctChar) {
+                // 答對：轉綠並自動秀答案
+                element.classList.add('border-emerald-500', 'bg-emerald-100', 'text-emerald-700', 'scale-110');
+                element.classList.remove('hover:border-purple-300', 'hover:bg-purple-50', 'hover:-translate-y-1');
+                
+                setTimeout(() => {
+                    showAnswer();
+                    choicesContainer.classList.add('hidden');
+                }, 500);
+            } else {
+                // 答錯：反灰並震動
+                element.classList.add('shake-anim', 'choice-wrong');
+                element.classList.remove('hover:border-purple-300', 'hover:bg-purple-50', 'hover:-translate-y-1');
+                
+                // 動畫結束後移除 shake class 以便可以再次觸發（不過這裡已經 pointer-events: none 了）
+                setTimeout(() => element.classList.remove('shake-anim'), 400);
+            }
+        }
+
+        // ==========================================
+        // 檢核表
+        // ==========================================
+        function generateSummary() {
+            switchView('summary');
+            let html = '';
+            completedQuizList.forEach((item, index) => {
+                html += `
+                    <div class="flex items-center justify-between bg-white p-4 rounded-2xl border-2 border-gray-100 hover:border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm">
+                        <div class="flex items-center gap-4 md:gap-8">
+                            <span class="text-3xl font-bold text-gray-700 w-32 tracking-widest">${item.text}</span>
+                            <span class="text-2xl text-rose-500 font-bold border-2 border-rose-200 px-6 py-1 rounded-xl bg-rose-50">解答：${item.target}</span>
+                        </div>
+                        <label class="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-3 rounded-xl border-2 border-gray-200 hover:border-red-400">
+                            <span class="text-xl font-bold text-gray-600 hidden md:inline">這個字還不熟</span>
+                            <input type="checkbox" class="custom-checkbox unfamiliar-check" data-index="${index}">
+                        </label>
+                    </div>
+                `;
+            });
+            checklistContainer.innerHTML = html;
+        }
+
+        function startReviewMode() {
+            const checks = document.querySelectorAll('.unfamiliar-check');
+            unfamiliarWords = [];
+            checks.forEach(check => {
+                if(check.checked) {
+                    const idx = check.getAttribute('data-index');
+                    unfamiliarWords.push(completedQuizList[idx]);
+                }
+            });
+
+            if (unfamiliarWords.length === 0) {
+                showMessage("🌟", "太厲害了！", "你完全掌握了這一課的所有生字！我們換別課挑戰吧！");
+                return;
+            }
+            currentReviewIndex = 0;
+            switchView('review');
+            renderReviewWord();
+        }
+
+        // ==========================================
+        // 口訣複習
+        // ==========================================
+        function renderReviewWord() {
+            const item = unfamiliarWords[currentReviewIndex];
+            document.getElementById('review-progress').innerText = `${currentReviewIndex + 1} / ${unfamiliarWords.length}`;
+            document.getElementById('review-word-text').innerText = item.text;
+            document.getElementById('review-target-char').innerText = item.target;
+            const targetCharData = item.chars.find(c => c.c === item.target);
+            document.getElementById('review-target-pinyin').innerText = targetCharData ? targetCharData.p : "";
+            
+            document.getElementById('mnemonic-text').innerText = item.mnemonic;
+            const rubyArea = document.getElementById('review-target-ruby');
+            rubyArea.style.animation = 'none';
+            rubyArea.offsetHeight; 
+            rubyArea.style.animation = 'popIn 0.5s ease forwards';
+            
+            setTimeout(() => { playMnemonicAudio(); }, 500);
+        }
+
+        function playMnemonicAudio() {
+            const item = unfamiliarWords[currentReviewIndex];
+            if(item && item.mnemonic) {
+                speakText(item.target + "。" + item.mnemonic);
+            }
+        }
+
+        function nextReviewWord() {
+            if(synth.speaking) synth.cancel();
+            currentReviewIndex++;
+            if (currentReviewIndex >= unfamiliarWords.length) {
+                showMessage("🎊", "複習完成！", "魔法口訣是不是很有趣呢？下次聽寫一定沒問題！");
+                startLesson(currentLesson); 
+            } else {
+                renderReviewWord();
+            }
+        }
+
+        function speakText(text) {
+            if (synth.speaking) synth.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-TW';
+            utterance.rate = 0.85; 
+            utterance.pitch = 1.1; 
+            let voices = synth.getVoices();
+            let zhVoice = voices.find(voice => voice.lang === 'zh-TW' || voice.name.includes('Taiwan'));
+            if (zhVoice) utterance.voice = zhVoice;
+            synth.speak(utterance);
+        }
+
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = () => {};
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
